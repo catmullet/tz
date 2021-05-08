@@ -6,12 +6,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
+	"sync"
+	"time"
 )
 
 // TimeZoneCollection ...
 type TimeZoneCollection struct {
 	Features []*Feature
+	*sync.RWMutex
 }
 
 type Feature struct {
@@ -23,6 +27,8 @@ type Feature struct {
 
 type Geometry struct {
 	Coordinates []Coordinates
+	MaxPoint    Point
+	MinPoint    Point
 }
 
 type Coordinates struct {
@@ -50,7 +56,10 @@ var multiPolygon struct {
 }
 
 func NewGeoJsonTimeZoneLookup(geoJsonFile string) (TimeZoneLookup, error) {
-	var fc = &TimeZoneCollection{}
+	var fc = &TimeZoneCollection{
+		Features: make([]*Feature, 500),
+		RWMutex:  new(sync.RWMutex),
+	}
 	if len(geoJsonFile) == 0 {
 		geoJsonFile = os.Getenv("GEO_JSON_FILE")
 	}
@@ -98,8 +107,12 @@ func (g *Geometry) UnmarshalJSON(data []byte) (err error) {
 		return err
 	}
 
-	var minPoint = Point{Lon: 180, Lat: 90}
-	var maxPoint = Point{Lon: -180, Lat: -90}
+	if g.MaxPoint.Lat == 0 && g.MaxPoint.Lon == 0 {
+		g.MaxPoint = Point{Lon: -180, Lat: -90}
+	}
+	if g.MinPoint.Lat == 0 && g.MinPoint.Lon == 0 {
+		g.MinPoint = Point{Lon: 180, Lat: 90}
+	}
 
 	switch polygonType.Type {
 	case "Polygon":
@@ -112,12 +125,10 @@ func (g *Geometry) UnmarshalJSON(data []byte) (err error) {
 			lat := v[1]
 			pol[i].Lon = lon
 			pol[i].Lat = lat
-			updateMaxMinLatLon(&maxPoint, &minPoint, lat, lon)
+			updateMaxMinLatLon(&g.MaxPoint, &g.MinPoint, lat, lon)
 		}
 		g.Coordinates = append(g.Coordinates, Coordinates{
-			Polygon:  pol,
-			MaxPoint: maxPoint,
-			MinPoint: minPoint,
+			Polygon: pol,
 		})
 		return nil
 	case "MultiPolygon":
@@ -126,20 +137,16 @@ func (g *Geometry) UnmarshalJSON(data []byte) (err error) {
 		}
 		g.Coordinates = make([]Coordinates, len(multiPolygon.Coordinates))
 		for j, poly := range multiPolygon.Coordinates {
-			minPoint = Point{Lon: 180, Lat: 90}
-			maxPoint = Point{Lon: -180, Lat: -90}
 			pol := make([]Point, len(poly[0]))
 			for i, v := range poly[0] {
 				var lon = v[0]
 				var lat = v[1]
 				pol[i].Lon = lon
 				pol[i].Lat = lat
-				updateMaxMinLatLon(&maxPoint, &minPoint, lat, lon)
+				updateMaxMinLatLon(&g.MaxPoint, &g.MinPoint, lat, lon)
 			}
 			g.Coordinates[j] = Coordinates{
-				Polygon:  pol,
-				MaxPoint: maxPoint,
-				MinPoint: minPoint,
+				Polygon: pol,
 			}
 		}
 		return nil
@@ -164,11 +171,14 @@ func updateMaxMinLatLon(maxPoint, minPoint *Point, lat, lon float64) {
 }
 
 func (fc *TimeZoneCollection) TimeZone(lat, lon float64) (tz string) {
-	for _, f := range fc.Features {
-		for _, coord := range f.Geometry.Coordinates {
-			if coord.MinPoint.Lat < lat && coord.MinPoint.Lon < lon && coord.MaxPoint.Lat > lat && coord.MaxPoint.Lon > lon {
-				if coord.contains(Point{lon, lat}) {
-					return f.Properties.Tzid
+	for i := range fc.Features {
+		if fc.Features[i].Geometry.MinPoint.Lat < lat &&
+			fc.Features[i].Geometry.MinPoint.Lon < lon &&
+			fc.Features[i].Geometry.MaxPoint.Lat > lat &&
+			fc.Features[i].Geometry.MaxPoint.Lon > lon {
+			for j := range fc.Features[i].Geometry.Coordinates {
+				if fc.Features[i].Geometry.Coordinates[j].contains(Point{lon, lat}) {
+					return fc.Features[i].Properties.Tzid
 				}
 			}
 		}
@@ -176,14 +186,17 @@ func (fc *TimeZoneCollection) TimeZone(lat, lon float64) (tz string) {
 	return
 }
 
-func (g *Coordinates) contains(point Point) (contains bool) {
-	if len(g.Polygon) < 3 {
+func (fc *TimeZoneCollection) Location(lat, lon float64) (loc *time.Location, err error) {
+	return time.LoadLocation(fc.TimeZone(lat, lon))
+}
+
+func (c *Coordinates) contains(point Point) (contains bool) {
+	if len(c.Polygon) < 3 {
 		return
 	}
-	var p = g.Polygon
-	contains = intersectsWithRaycast(point, p[len(p)-1], p[0])
-	for i := 1; i < len(p); i++ {
-		if intersectsWithRaycast(point, p[i-1], p[i]) {
+	contains = intersectsWithRaycast(point, c.Polygon[len(c.Polygon)-1], c.Polygon[0])
+	for i := 1; i < len(c.Polygon); i++ {
+		if intersectsWithRaycast(point, c.Polygon[i-1], c.Polygon[i]) {
 			contains = !contains
 			if contains == true {
 				return
@@ -194,6 +207,29 @@ func (g *Coordinates) contains(point Point) (contains bool) {
 }
 
 func intersectsWithRaycast(point, start, end Point) bool {
-	return (start.Lon > point.Lon) != (end.Lon > point.Lon) &&
-		point.Lat < (end.Lat-start.Lat)*(point.Lon-start.Lon)/(end.Lon-start.Lon)+start.Lat
+	if start.Lat > end.Lat {
+		start, end = end, start
+	}
+	for point.Lat == start.Lat || point.Lat == end.Lat {
+		point.Lat = math.Nextafter(point.Lat, math.Inf(1))
+	}
+	if point.Lat < start.Lat || point.Lat > end.Lat {
+		return false
+	}
+	if start.Lon > end.Lon {
+		if point.Lon > start.Lon {
+			return false
+		}
+		if point.Lon < end.Lon {
+			return true
+		}
+	} else {
+		if point.Lon > end.Lon {
+			return false
+		}
+		if point.Lon < start.Lon {
+			return true
+		}
+	}
+	return (point.Lat-start.Lat)/(point.Lon-start.Lon) >= (end.Lat-start.Lat)/(end.Lon-start.Lon)
 }

@@ -2,8 +2,12 @@ package timezonelookup
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 )
 
 var tzl TimeZoneLookup
@@ -86,7 +90,8 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-func Test(t *testing.T) {
+func TestTimeZone(t *testing.T) {
+	start := time.Now()
 	for _, q := range querys {
 		t.Run(fmt.Sprintf("coordinates_%v_%v", q.Lat, q.Lon), func(t *testing.T) {
 			tzid := tzl.TimeZone(q.Lat, q.Lon)
@@ -96,13 +101,57 @@ func Test(t *testing.T) {
 			}
 		})
 	}
+	elapsed := time.Since(start)
+	t.Logf("total elapsed time: %dμs", elapsed.Milliseconds()/int64(len(querys)))
+	t.Logf("average time per op: %dμs", elapsed.Milliseconds()/int64(len(querys)))
 }
 
-func Benchmark(b *testing.B) {
+func TestLocation(t *testing.T) {
+	start := time.Now()
+	count := 0
+	for _, q := range testdataset {
+		t.Run(fmt.Sprintf("coordinates_%v_%v", q.lat, q.lon), func(t *testing.T) {
+			loc, err := tzl.Location(q.lat, q.lon)
+			tz := tzl.TimeZone(q.lat, q.lon)
+			if err != nil {
+				t.Error(err)
+			}
+			var offsetString = strings.Fields(start.In(loc).String())[2]
+			offset, _ := strconv.Atoi(strings.ReplaceAll(offsetString, "0", ""))
+			if offset != q.offset {
+				count++
+				t.Logf("timezone:%s, lat:%f, lon:%f, actual: %d, expected: %d", tz, q.lat, q.lon, offset, q.offset)
+				t.Fail()
+			}
+		})
+	}
+	elapsed := time.Since(start)
+	percentage := float64(count) / float64(len(testdataset)) * 100.00
+	log.Println(len(testdataset))
+	log.Println(count)
+	log.Printf("Total Discrepency: %0.0f%%", percentage)
+	t.Logf("total elapsed time: %dμs", elapsed.Milliseconds()/int64(len(querys)))
+	t.Logf("average time per op: %dμs", elapsed.Milliseconds()/int64(len(querys)))
+}
+
+func BenchmarkTimeZone(b *testing.B) {
 	for _, bm := range querys {
 		b.Run(fmt.Sprintf("coordinates_%v_%v", bm.Lat, bm.Lon), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				tzl.TimeZone(bm.Lat, bm.Lon)
+			}
+		})
+	}
+}
+
+func BenchmarkLocation(b *testing.B) {
+	for _, bm := range querys {
+		b.Run(fmt.Sprintf("coordinates_%v_%v", bm.Lat, bm.Lon), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				_, err := tzl.Location(bm.Lat, bm.Lon)
+				if err != nil {
+					b.Error(err)
+				}
 			}
 		})
 	}
