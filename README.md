@@ -1,7 +1,7 @@
 ![](https://raw.githubusercontent.com/catmullet/tz/master/assets/tz.png)
 # Time Zone Lookup by Lat/Lon
 ### Description
-This Repo for timezone lookup by latitude and longitude. It is a mash up of the two popular Go libraries
+Library for timezone lookup by latitude and longitude. This is a mash up of the two popular Go libraries
 * [go-tz](https://github.com/ugjka/go-tz)
 * [timezoneLookup](https://github.com/evanoberholster/timezoneLookup)
 ### Why, When they already exist?
