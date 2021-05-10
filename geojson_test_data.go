@@ -1,13 +1,13 @@
-package timezonelookup
+package tz
 
-type TimeZoneTestData struct {
+type timeZoneTestData struct {
 	Lat    float64
 	Lon    float64
 	Offset int
 }
 
 // 1000 samples of Lat,long and time zone hour Offset from GMT.
-var testdataset = []TimeZoneTestData{
+var testdataset = []timeZoneTestData{
 	{Lat: 13.0884, Lon: -59.56916, Offset: -4},
 	{Lat: 13.06306, Lon: -59.52231, Offset: -4},
 	{Lat: -1.56097, Lon: 13.23267, Offset: 1},

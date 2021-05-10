@@ -1,4 +1,4 @@
-package timezonelookup
+package tz
 
 import (
 	"archive/zip"
