@@ -110,17 +110,17 @@ func TestLocation(t *testing.T) {
 	start := time.Now()
 	count := 0
 	for _, q := range testdataset {
-		t.Run(fmt.Sprintf("coordinates_%v_%v", q.lat, q.lon), func(t *testing.T) {
-			loc, err := tzl.Location(q.lat, q.lon)
-			tz := tzl.TimeZone(q.lat, q.lon)
+		t.Run(fmt.Sprintf("coordinates_%v_%v", q.Lat, q.Lon), func(t *testing.T) {
+			loc, err := tzl.Location(q.Lat, q.Lon)
+			tz := tzl.TimeZone(q.Lat, q.Lon)
 			if err != nil {
 				t.Error(err)
 			}
 			var offsetString = strings.Fields(start.In(loc).String())[2]
 			offset, _ := strconv.Atoi(strings.ReplaceAll(offsetString, "0", ""))
-			if offset != q.offset {
+			if offset != q.Offset {
 				count++
-				t.Logf("timezone:%s, lat:%f, lon:%f, actual: %d, expected: %d", tz, q.lat, q.lon, offset, q.offset)
+				t.Logf("timezone:%s, Lat:%f, Lon:%f, actual: %d, expected: %d", tz, q.Lat, q.Lon, offset, q.Offset)
 				t.Fail()
 			}
 		})
