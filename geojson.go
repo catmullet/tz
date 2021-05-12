@@ -254,7 +254,8 @@ func (fc TimeZoneCollection) Location(lat, lon float64) (loc *time.Location, err
 
 func (c Coordinates) contains(point Point) bool {
 	const tolerance = 5
-	var polyLen = len(c.Polygon)
+	var polygon = c.Polygon
+	var polyLen = len(polygon)
 	if polyLen < 3 {
 		return false
 	}
@@ -262,9 +263,9 @@ func (c Coordinates) contains(point Point) bool {
 	start := polyLen - tolerance
 	end := 0
 
-	contains := rayCast(point, c.Polygon[start], c.Polygon[end])
-	for i, j := tolerance, tolerance; i < polyLen; i, j = i+tolerance, i {
-		if rayCast(point, c.Polygon[j], c.Polygon[i]) {
+	contains := rayCast(point, polygon[start], polygon[end])
+	for i, j := tolerance, 0; i < polyLen; i, j = i+tolerance, i {
+		if rayCast(point, polygon[j], polygon[i]) {
 			contains = !contains
 		}
 	}
@@ -273,7 +274,6 @@ func (c Coordinates) contains(point Point) bool {
 
 func rayCast(point, start, end Point) bool {
 	var pLat, pLon, startLat, startLon, endLat, endLon = point.Lat, point.Lon, start.Lat, start.Lon, end.Lat, end.Lon
-
 	if startLat > endLat {
 		startLat, startLon, endLat, endLon = endLat, endLon, startLat, startLon
 	}
