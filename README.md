@@ -1,9 +1,7 @@
 ![](https://raw.githubusercontent.com/catmullet/tz/master/assets/tz.png)
 # Time Zone Lookup by Lat/Lon
 ### Description
-This Repo for timezone lookup by latitude and longitude. It is a mash up of the two popular Go libraries
-* [go-tz](https://github.com/ugjka/go-tz)
-* [timezoneLookup](https://github.com/evanoberholster/timezoneLookup)
+This is a library for timezone lookup by latitude and longitude. It uses a bounding box to check the most likely polygons with a more accurate raycast algorithm. Seeing worst case 10000 queries/second. We need both speed and highly accurate results and this is the resulting project.
 ### Goals of this project?
 1. Speed
 2. Accuracy.
