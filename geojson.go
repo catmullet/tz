@@ -13,13 +13,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"time"
 )
 
 type TimeZoneCollection struct {
 	Features []*Feature
-	mutex    *sync.RWMutex
 }
 
 type Feature struct {
@@ -76,7 +74,6 @@ func NewGeoJsonTimeZoneLookup(geoJsonFile string, logOutput ...io.Writer) (TimeZ
 
 	var fc = &TimeZoneCollection{
 		Features: make([]*Feature, 500),
-		mutex:    new(sync.RWMutex),
 	}
 
 	if err := findCachedModel(fc); err == nil {
@@ -130,11 +127,9 @@ func NewGeoJsonTimeZoneLookup(geoJsonFile string, logOutput ...io.Writer) (TimeZ
 }
 
 func findCachedModel(fc *TimeZoneCollection) error {
-	cache, err := os.Open(filepath.Join(os.TempDir(), "tzdata.snappy"))
+	cache, err := os.Open(filepath.Join("cache", "tzdata.snappy"))
 	if err != nil {
-		if cache, err = os.Open(filepath.Join("cache", "tzdata.snappy")); err != nil {
-			return err
-		}
+		return err
 	}
 	defer cache.Close()
 	snp := snappy.NewReader(cache)
@@ -166,11 +161,11 @@ func (g *Geometry) UnmarshalJSON(data []byte) (err error) {
 		return err
 	}
 
-	if g.MaxPoint.Lat == 0 && g.MaxPoint.Lon == 0 {
-		g.MaxPoint = Point{Lon: -180, Lat: -90}
+	if g.MaxPoint.Lat == 0.0 && g.MaxPoint.Lon == 0.0 {
+		g.MaxPoint = Point{Lon: -180.0, Lat: -90.0}
 	}
-	if g.MinPoint.Lat == 0 && g.MinPoint.Lon == 0 {
-		g.MinPoint = Point{Lon: 180, Lat: 90}
+	if g.MinPoint.Lat == 0.0 && g.MinPoint.Lon == 0.0 {
+		g.MinPoint = Point{Lon: 180.0, Lat: 90.0}
 	}
 
 	switch polygonType.Type {
@@ -178,8 +173,8 @@ func (g *Geometry) UnmarshalJSON(data []byte) (err error) {
 		if err := json.Unmarshal(data, &polygon); err != nil {
 			return err
 		}
-		coord := Coordinates{Polygon: make([]Point, len(polygon.Coordinates[0])), MaxPoint: Point{Lon: -180,
-			Lat: -90}, MinPoint: Point{Lon: 180, Lat: 90}}
+		coord := Coordinates{Polygon: make([]Point, len(polygon.Coordinates[0])), MaxPoint: Point{Lon: -180.0,
+			Lat: -90.0}, MinPoint: Point{Lon: 180.0, Lat: 90.0}}
 		for i, v := range polygon.Coordinates[0] {
 			lon := v[0]
 			lat := v[1]
@@ -196,8 +191,8 @@ func (g *Geometry) UnmarshalJSON(data []byte) (err error) {
 		}
 		g.Coordinates = make([]Coordinates, len(multiPolygon.Coordinates))
 		for j, poly := range multiPolygon.Coordinates {
-			coord := Coordinates{Polygon: make([]Point, len(poly[0])), MaxPoint: Point{Lon: -180,
-				Lat: -90}, MinPoint: Point{Lon: 180, Lat: 90}}
+			coord := Coordinates{Polygon: make([]Point, len(poly[0])), MaxPoint: Point{Lon: -180.0,
+				Lat: -90.0}, MinPoint: Point{Lon: 180.0, Lat: 90.0}}
 			for i, v := range poly[0] {
 				lon := v[0]
 				lat := v[1]
@@ -229,9 +224,7 @@ func updateMaxMin(maxPoint, minPoint *Point, lat, lon float64) {
 	}
 }
 
-func (fc *TimeZoneCollection) TimeZone(lat, lon float64) (tz string) {
-	fc.mutex.Lock()
-	defer fc.mutex.Unlock()
+func (fc TimeZoneCollection) TimeZone(lat, lon float64) (tz string) {
 	for _, feat := range fc.Features {
 		f := feat
 		tzString := f.Properties.Tzid
@@ -255,52 +248,55 @@ func (fc *TimeZoneCollection) TimeZone(lat, lon float64) (tz string) {
 	return
 }
 
-func (fc *TimeZoneCollection) Location(lat, lon float64) (loc *time.Location, err error) {
+func (fc TimeZoneCollection) Location(lat, lon float64) (loc *time.Location, err error) {
 	return time.LoadLocation(fc.TimeZone(lat, lon))
 }
 
-func (c *Coordinates) contains(point Point) bool {
+func (c Coordinates) contains(point Point) bool {
 	const tolerance = 5
-	if len(c.Polygon) < 3 {
+	var polyLen = len(c.Polygon)
+	if polyLen < 3 {
 		return false
 	}
 
-	start := len(c.Polygon) - tolerance
+	start := polyLen - tolerance
 	end := 0
 
-	contains := rayCast(&point, &c.Polygon[start], &c.Polygon[end])
-	for i := tolerance; i < len(c.Polygon); i = i + tolerance {
-		if rayCast(&point, &c.Polygon[i-tolerance], &c.Polygon[i]) {
+	contains := rayCast(point, c.Polygon[start], c.Polygon[end])
+	for i, j := tolerance, tolerance; i < polyLen; i, j = i+tolerance, i {
+		if rayCast(point, c.Polygon[j], c.Polygon[i]) {
 			contains = !contains
 		}
 	}
 	return contains
 }
 
-func rayCast(point, start, end *Point) bool {
-	if start.Lat > end.Lat {
-		start, end = end, start
+func rayCast(point, start, end Point) bool {
+	var pLat, pLon, startLat, startLon, endLat, endLon = point.Lat, point.Lon, start.Lat, start.Lon, end.Lat, end.Lon
+
+	if startLat > endLat {
+		startLat, startLon, endLat, endLon = endLat, endLon, startLat, startLon
 	}
-	for point.Lat == start.Lat || point.Lat == end.Lat {
-		point.Lat = math.Nextafter(point.Lat, math.Inf(1))
+	for pLat == startLat || pLat == endLat {
+		pLat = math.Nextafter(pLat, math.Inf(1))
 	}
-	if point.Lat < start.Lat || point.Lat > end.Lat {
+	if pLat < startLat || pLat > endLat {
 		return false
 	}
-	if start.Lon > end.Lon {
-		if point.Lon > start.Lon {
+	if startLon > endLon {
+		if pLon > startLon {
 			return false
 		}
-		if point.Lon < end.Lon {
+		if pLon < endLon {
 			return true
 		}
 	} else {
-		if point.Lon > end.Lon {
+		if pLon > endLon {
 			return false
 		}
-		if point.Lon < start.Lon {
+		if pLon < startLon {
 			return true
 		}
 	}
-	return (point.Lat-start.Lat)/(point.Lon-start.Lon) >= (end.Lat-start.Lat)/(end.Lon-start.Lon)
+	return (pLat-startLat)/(pLon-startLon) >= (endLat-startLat)/(endLon-startLon)
 }
