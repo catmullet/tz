@@ -90,6 +90,13 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+func BenchmarkLongTimeZone(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		//tzl.TimeZone(42.7235,-73.6931)
+		tzl.TimeZone(5.840370, -55.196100)
+	}
+}
+
 func TestTimeZone(t *testing.T) {
 	start := time.Now()
 	for _, q := range querys {

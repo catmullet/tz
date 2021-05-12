@@ -4,12 +4,12 @@
 This Repo for timezone lookup by latitude and longitude. It is a mash up of the two popular Go libraries
 * [go-tz](https://github.com/ugjka/go-tz)
 * [timezoneLookup](https://github.com/evanoberholster/timezoneLookup)
-### Why, When they already exist?
-1. We wanted the speed of [timezoneLookup](https://github.com/evanoberholster/timezoneLookup).
-2. The accuracy of [go-tz](https://github.com/ugjka/go-tz).
-3. Improve some type structures by implementing an interface.
-4. Make concurrent safe.
-5. Allow easy updating of zip file locally.
+### Goals of this project?
+1. Speed
+2. Accuracy.
+3. Easy.
+4. Concurrent safe.
+5. Easy updating of zip file locally.
 ### Simple
 Grab the tz library.
 ```zsh
