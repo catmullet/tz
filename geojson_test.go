@@ -82,17 +82,25 @@ var querys = []coords{
 
 func TestMain(m *testing.M) {
 	var err error
-	tzl, err = NewGeoJsonTimeZoneLookup("timezones-with-oceans.geojson.zip")
+	tzl, err = NewGeoJsonTimeZoneLookup("timezones-with-oceans.geojson.zip", os.Stdout)
 	if err != nil {
+		log.Println(err)
 		os.Exit(1)
 	}
 	code := m.Run()
 	os.Exit(code)
 }
 
+func TestSmallPolygon(t *testing.T) {
+	tz := tzl.TimeZone(24.3000, 153.9667)
+	t.Log("time_zone:", tz)
+	if tz != "Asia/Tokyo" {
+		t.Fail()
+	}
+}
+
 func BenchmarkLongTimeZone(b *testing.B) {
 	for i := 0; i < b.N; i++ {
-		//tzl.TimeZone(42.7235,-73.6931)
 		tzl.TimeZone(5.840370, -55.196100)
 	}
 }

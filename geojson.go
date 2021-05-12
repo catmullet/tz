@@ -3,11 +3,15 @@ package tz
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
+	"github.com/golang/snappy"
 	"io"
+	"log"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -15,7 +19,7 @@ import (
 
 type TimeZoneCollection struct {
 	Features []*Feature
-	*sync.RWMutex
+	mutex    *sync.RWMutex
 }
 
 type Feature struct {
@@ -55,16 +59,29 @@ var multiPolygon struct {
 	Coordinates [][][][]float64
 }
 
-func NewGeoJsonTimeZoneLookup(geoJsonFile string) (TimeZoneLookup, error) {
-	var fc = &TimeZoneCollection{
-		Features: make([]*Feature, 500),
-		RWMutex:  new(sync.RWMutex),
-	}
+func NewGeoJsonTimeZoneLookup(geoJsonFile string, logOutput ...io.Writer) (TimeZoneLookup, error) {
+
+	logger := log.New(io.MultiWriter(logOutput...), "tz", log.Lshortfile)
+	logger.Println("initializing...")
+
+	const timzonesFile = "timezones-with-oceans.geojson.zip"
+
 	if len(geoJsonFile) == 0 {
 		geoJsonFile = os.Getenv("GEO_JSON_FILE")
 	}
 	if len(geoJsonFile) == 0 {
-		geoJsonFile = "timezones-with-oceans.geojson.zip"
+		logger.Println("no geo time zone file specified, using default")
+		geoJsonFile = timzonesFile
+	}
+
+	var fc = &TimeZoneCollection{
+		Features: make([]*Feature, 500),
+		mutex:    new(sync.RWMutex),
+	}
+
+	if err := findCachedModel(fc); err == nil {
+		logger.Println("cached model found")
+		return fc, nil
 	}
 
 	g, err := zip.OpenReader(geoJsonFile)
@@ -78,7 +95,6 @@ func NewGeoJsonTimeZoneLookup(geoJsonFile string) (TimeZoneLookup, error) {
 	var file = g.File[0]
 	var buf = bytes.NewBuffer([]byte{})
 	src, err := file.Open()
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to unzip file: %w", err)
 	}
@@ -109,7 +125,40 @@ func NewGeoJsonTimeZoneLookup(geoJsonFile string) (TimeZoneLookup, error) {
 		return fc.Features[i].Geometry.MinPoint.Lon <= fc.Features[j].Geometry.MinPoint.Lon
 	})
 
-	return fc, nil
+	logger.Println("finished")
+	return fc, createCachedModel(fc)
+}
+
+func findCachedModel(fc *TimeZoneCollection) error {
+	cache, err := os.Open(filepath.Join(os.TempDir(), "tzdata.snappy"))
+	if err != nil {
+		if cache, err = os.Open(filepath.Join("cache", "tzdata.snappy")); err != nil {
+			return err
+		}
+	}
+	defer cache.Close()
+	snp := snappy.NewReader(cache)
+	dec := gob.NewDecoder(snp)
+	if err := dec.Decode(fc); err != nil && err != io.EOF {
+		return err
+	}
+	return nil
+}
+
+func createCachedModel(fc *TimeZoneCollection) error {
+	cache, err := os.Create(filepath.Join("cache", "tzdata.snappy"))
+	if err != nil {
+		return err
+	}
+	defer cache.Close()
+	snp := snappy.NewBufferedWriter(cache)
+	enc := gob.NewEncoder(snp)
+	if err := enc.Encode(fc); err != nil {
+		cache.Close()
+		return err
+	}
+
+	return nil
 }
 
 func (g *Geometry) UnmarshalJSON(data []byte) (err error) {
@@ -181,8 +230,8 @@ func updateMaxMin(maxPoint, minPoint *Point, lat, lon float64) {
 }
 
 func (fc *TimeZoneCollection) TimeZone(lat, lon float64) (tz string) {
-	fc.Lock()
-	defer fc.Unlock()
+	fc.mutex.Lock()
+	defer fc.mutex.Unlock()
 	for _, feat := range fc.Features {
 		f := feat
 		tzString := f.Properties.Tzid
