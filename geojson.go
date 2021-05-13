@@ -145,7 +145,9 @@ func findCachedModel(fc *TimeZoneCollection) error {
 }
 
 func createCachedModel(fc *TimeZoneCollection) error {
-	cache, err := os.Create("tzdata.snappy")
+	_, currentFilePath, _, _ := runtime.Caller(0)
+	currentFilePath = strings.ReplaceAll(currentFilePath, "/geojson.go", "")
+	cache, err := os.Create(filepath.Join(currentFilePath, "tzdata.snappy"))
 	if err != nil {
 		return err
 	}
@@ -277,6 +279,7 @@ func (c Coordinates) contains(point Point) bool {
 }
 
 func rayCast(point, start, end Point) bool {
+	// Re-assign struct variables into own float64 variables.
 	var pLat, pLon, startLat, startLon, endLat, endLon = point.Lat, point.Lon, start.Lat, start.Lon, end.Lat, end.Lon
 	if startLat > endLat {
 		startLat, startLon, endLat, endLon = endLat, endLon, startLat, startLon
