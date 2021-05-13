@@ -18,6 +18,11 @@ import (
 	"time"
 )
 
+var currentDirectory = func() string {
+	var _, currentFilePath, _, _ = runtime.Caller(0)
+	return strings.ReplaceAll(currentFilePath, "/geojson.go", "")
+}()
+
 type TimeZoneCollection struct {
 	Features []*Feature
 }
@@ -64,14 +69,14 @@ func NewGeoJsonTimeZoneLookup(geoJsonFile string, logOutput ...io.Writer) (TimeZ
 	logger := log.New(io.MultiWriter(logOutput...), "tz", log.Lshortfile)
 	logger.Println("initializing...")
 
-	const timzonesFile = "timezones-with-oceans.geojson.zip"
+	var timeZoneFile = filepath.Join(currentDirectory, "timezones-with-oceans.geojson.zip")
 
 	if len(geoJsonFile) == 0 {
 		geoJsonFile = os.Getenv("GEO_JSON_FILE")
 	}
 	if len(geoJsonFile) == 0 {
 		logger.Println("no geo time zone file specified, using default")
-		geoJsonFile = timzonesFile
+		geoJsonFile = timeZoneFile
 	}
 
 	var fc = &TimeZoneCollection{
@@ -129,9 +134,7 @@ func NewGeoJsonTimeZoneLookup(geoJsonFile string, logOutput ...io.Writer) (TimeZ
 }
 
 func findCachedModel(fc *TimeZoneCollection) error {
-	_, currentFilePath, _, _ := runtime.Caller(0)
-	currentFilePath = strings.ReplaceAll(currentFilePath, "/geojson.go", "")
-	cache, err := os.Open(filepath.Join(currentFilePath, "tzdata.snappy"))
+	cache, err := os.Open(filepath.Join(currentDirectory, "tzdata.snappy"))
 	if err != nil {
 		return err
 	}
@@ -145,9 +148,7 @@ func findCachedModel(fc *TimeZoneCollection) error {
 }
 
 func createCachedModel(fc *TimeZoneCollection) error {
-	_, currentFilePath, _, _ := runtime.Caller(0)
-	currentFilePath = strings.ReplaceAll(currentFilePath, "/geojson.go", "")
-	cache, err := os.Create(filepath.Join(currentFilePath, "tzdata.snappy"))
+	cache, err := os.Create(filepath.Join(currentDirectory, "tzdata.snappy"))
 	if err != nil {
 		return err
 	}
@@ -155,10 +156,8 @@ func createCachedModel(fc *TimeZoneCollection) error {
 	snp := snappy.NewBufferedWriter(cache)
 	enc := gob.NewEncoder(snp)
 	if err := enc.Encode(fc); err != nil {
-		cache.Close()
 		return err
 	}
-
 	return nil
 }
 
