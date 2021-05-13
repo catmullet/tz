@@ -11,7 +11,6 @@ import (
 	"log"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 	"time"
 )
@@ -127,7 +126,7 @@ func NewGeoJsonTimeZoneLookup(geoJsonFile string, logOutput ...io.Writer) (TimeZ
 }
 
 func findCachedModel(fc *TimeZoneCollection) error {
-	cache, err := os.Open(filepath.Join("cache", "tzdata.snappy"))
+	cache, err := os.Open("tzdata.snappy")
 	if err != nil {
 		return err
 	}
@@ -141,7 +140,7 @@ func findCachedModel(fc *TimeZoneCollection) error {
 }
 
 func createCachedModel(fc *TimeZoneCollection) error {
-	cache, err := os.Create(filepath.Join("cache", "tzdata.snappy"))
+	cache, err := os.Create("tzdata.snappy")
 	if err != nil {
 		return err
 	}
