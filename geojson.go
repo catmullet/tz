@@ -9,7 +9,6 @@ import (
 	"github.com/golang/snappy"
 	"io"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -258,51 +257,40 @@ func (fc TimeZoneCollection) Location(lat, lon float64) (loc *time.Location, err
 }
 
 func (c Coordinates) contains(point Point) bool {
-	const tolerance = 5
 	var polygon = c.Polygon
-	var polyLen = len(polygon)
-	if polyLen < 3 {
+	if windingNumber(point.Lat, point.Lon, polygon) == 0 {
 		return false
 	}
-
-	start := polyLen - tolerance
-	end := 0
-
-	contains := rayCast(point, polygon[start], polygon[end])
-	for i, j := tolerance, 0; i < polyLen; i, j = i+tolerance, i {
-		if rayCast(point, polygon[j], polygon[i]) {
-			contains = !contains
-		}
-	}
-	return contains
+	return true
 }
 
-func rayCast(point, start, end Point) bool {
-	// Re-assign struct variables into own float64 variables.
-	var pLat, pLon, startLat, startLon, endLat, endLon = point.Lat, point.Lon, start.Lat, start.Lon, end.Lat, end.Lon
-	if startLat > endLat {
-		startLat, startLon, endLat, endLon = endLat, endLon, startLat, startLon
+func windingNumber(lat, lon float64, polygon []Point) int {
+	if len(polygon) < 3 {
+		return 0
 	}
-	for pLat == startLat || pLat == endLat {
-		pLat = math.Nextafter(pLat, math.Inf(1))
-	}
-	if pLat < startLat || pLat > endLat {
-		return false
-	}
-	if startLon > endLon {
-		if pLon > startLon {
-			return false
-		}
-		if pLon < endLon {
-			return true
-		}
-	} else {
-		if pLon > endLon {
-			return false
-		}
-		if pLon < startLon {
-			return true
+
+	var wn = 0
+	var edgeCount = len(polygon) - 5
+
+	for i, j := 0, 5; i < edgeCount; i, j = i+5, j+5 {
+		var apLat, apLon, bLat, bLon = polygon[i].Lat, polygon[i].Lon, polygon[j].Lat, polygon[j].Lon
+		if apLat <= lat {
+			if bLat > lat {
+				if isLeft(lat, lon, apLat, apLon, bLat, bLon) > 0 {
+					wn++
+				}
+			}
+		} else {
+			if polygon[j].Lat <= lat {
+				if isLeft(lat, lon, apLat, apLon, bLat, bLon) < 0 {
+					wn--
+				}
+			}
 		}
 	}
-	return (pLat-startLat)/(pLon-startLon) >= (endLat-startLat)/(endLon-startLon)
+	return wn
+}
+
+func isLeft(lat, lon, latA, lonA, latB, lonB float64) float64 {
+	return (lonB-lonA)*(lat-latA) - (lon-lonA)*(latB-latA)
 }

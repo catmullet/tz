@@ -163,10 +163,7 @@ func BenchmarkLocation(b *testing.B) {
 	for _, bm := range querys {
 		b.Run(fmt.Sprintf("coordinates_%v_%v", bm.Lat, bm.Lon), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				_, err := tzl.Location(bm.Lat, bm.Lon)
-				if err != nil {
-					b.Error(err)
-				}
+				tzl.Location(bm.Lat, bm.Lon)
 			}
 		})
 	}
