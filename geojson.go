@@ -85,6 +85,8 @@ func NewGeoJsonTimeZoneLookup(geoJsonFile string, logOutput ...io.Writer) (TimeZ
 	if err := findCachedModel(fc); err == nil {
 		logger.Println("cached model found")
 		return fc, nil
+	} else {
+		err = nil
 	}
 
 	g, err := zip.OpenReader(geoJsonFile)
