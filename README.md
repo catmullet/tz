@@ -19,7 +19,10 @@ This is a library for timezone lookup by latitude and longitude. It uses a bound
 ```
 _*The script will delete the current_ ```tzdata.snappy``` _compiled TimeZone file and Download a new geojson zip file.  This new geojson file will be loaded and compiled on the next run or by running unit tests. A new ```tzdata.snappy``` file will be created._
 
-### 3. Initialize the GeoJson Time Zone Lookup.
+### 3. Copy ```tzdata.snappy```
+Copy the ```tzdata.snappy``` file to the package you are going to initialize the time zone lookup object.
+
+### 4. Initialize the GeoJson Time Zone Lookup.
 ```go 
     lookup, err := tz.NewGeoJsonTimeZoneLookup("timezones-with-oceans.geojson.zip")
     // OR
@@ -28,7 +31,7 @@ _*The script will delete the current_ ```tzdata.snappy``` _compiled TimeZone fil
     // OR Get info from logging
     lookup, err := tz.NewGeoJsonTimeZoneLookup("", os.Stderr)
 ```
-### 4. Parse
+### 5. Parse
 Parse by Lat Lon and return string value of time zone.
 ```go 
     timeZone := lookup.TimeZone(5.261417, -3.925778)
