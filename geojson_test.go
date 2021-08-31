@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-var tzl TimeZoneLookup
+var tzl GeoJsonLookup
 
 type coords struct {
 	Lat float64
@@ -82,7 +82,7 @@ var querys = []coords{
 
 func TestMain(m *testing.M) {
 	var err error
-	tzl, err = NewGeoJsonTimeZoneLookup("timezones-with-oceans.geojson.zip", os.Stdout)
+	tzl, err = NewTZ()
 	if err != nil {
 		log.Println(err)
 		os.Exit(1)
@@ -163,7 +163,7 @@ func BenchmarkLocation(b *testing.B) {
 	for _, bm := range querys {
 		b.Run(fmt.Sprintf("coordinates_%v_%v", bm.Lat, bm.Lon), func(b *testing.B) {
 			for i := 0; i < b.N; i++ {
-				tzl.Location(bm.Lat, bm.Lon)
+				_, _ = tzl.Location(bm.Lat, bm.Lon)
 			}
 		})
 	}

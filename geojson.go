@@ -1,36 +1,30 @@
 package tz
 
 import (
-	"archive/zip"
-	"bytes"
-	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"github.com/golang/snappy"
-	"io"
-	"log"
-	"os"
-	"path/filepath"
-	"runtime"
+	"github.com/catmullet/tz/geodb"
+	"math"
 	"sort"
-	"strings"
 	"time"
 )
 
-var currentDirectory = func() string {
-	var _, currentFilePath, _, _ = runtime.Caller(0)
-	return strings.ReplaceAll(currentFilePath, "/geojson.go", "")
-}()
+const (
+	timeZonesFilename = "combined-with-oceans.json.snappy"
+)
 
-type TimeZoneCollection struct {
+type GeoJsonLookup interface {
+	TimeZone(lat, lon float64) string
+	Location(lat, lon float64) (*time.Location, error)
+}
+
+type Collection struct {
 	Features []*Feature
 }
 
 type Feature struct {
 	Geometry   Geometry
-	Properties struct {
-		Tzid string
-	}
+	Properties map[string]string
 }
 
 type Geometry struct {
@@ -63,64 +57,17 @@ var multiPolygon struct {
 	Coordinates [][][][]float64
 }
 
-func NewGeoJsonTimeZoneLookup(geoJsonFile string, logOutput ...io.Writer) (TimeZoneLookup, error) {
+func NewTZ() (GeoJsonLookup, error) {
+	var (
+		fc = &Collection{Features: make([]*Feature, 500)}
+	)
 
-	logger := log.New(io.MultiWriter(logOutput...), "tz", log.Lshortfile)
-	logger.Println("initializing...")
-
-	var timeZoneFile = filepath.Join(currentDirectory, "timezones-with-oceans.geojson.zip")
-
-	if len(geoJsonFile) == 0 {
-		geoJsonFile = os.Getenv("GEO_JSON_FILE")
-	}
-	if len(geoJsonFile) == 0 {
-		logger.Println("no geo time zone file specified, using default")
-		geoJsonFile = timeZoneFile
+	if b, err := newLocalGeoStorage(geodb.GeoDbEmbedDirectory).LoadFile(timeZonesFilename, &fc); err != nil || len(b) == 0 {
+		return nil, fmt.Errorf("failed to load file, %w", err)
 	}
 
-	var fc = &TimeZoneCollection{
-		Features: make([]*Feature, 500),
-	}
-
-	if err := findCachedModel(fc); err == nil {
-		logger.Println("cached model found")
-		return fc, nil
-	} else {
-		err = nil
-	}
-
-	g, err := zip.OpenReader(geoJsonFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read geojson file: %w", err)
-	}
-
-	if len(g.File) == 0 {
-		return nil, fmt.Errorf("zip file is empty")
-	}
-	var file = g.File[0]
-	var buf = bytes.NewBuffer([]byte{})
-	src, err := file.Open()
-	if err != nil {
-		return nil, fmt.Errorf("failed to unzip file: %w", err)
-	}
-
-	if _, err := io.Copy(buf, src); err != nil {
-		return nil, fmt.Errorf("failed to unzip file: %w", err)
-	}
-
-	if err := src.Close(); err != nil {
-		return nil, fmt.Errorf("failed to read geojson file: %w", err)
-	}
-	if err := g.Close(); err != nil {
-		return nil, fmt.Errorf("failed to read geojson file: %w", err)
-	}
-
-	if err := json.NewDecoder(buf).Decode(fc); err != nil {
-		return nil, fmt.Errorf("failed to read geojson file: %w", err)
-	}
-
-	for _, feat := range fc.Features {
-		f := feat
+	for i := range fc.Features {
+		f := fc.Features[i]
 		sort.SliceStable(f.Geometry.Coordinates, func(i, j int) bool {
 			return f.Geometry.Coordinates[i].MinPoint.Lon <= f.Geometry.Coordinates[j].MinPoint.Lon
 		})
@@ -130,36 +77,7 @@ func NewGeoJsonTimeZoneLookup(geoJsonFile string, logOutput ...io.Writer) (TimeZ
 		return fc.Features[i].Geometry.MinPoint.Lon <= fc.Features[j].Geometry.MinPoint.Lon
 	})
 
-	logger.Println("finished")
-	return fc, createCachedModel(fc)
-}
-
-func findCachedModel(fc *TimeZoneCollection) error {
-	cache, err := os.Open(filepath.Join(currentDirectory, "tzdata.snappy"))
-	if err != nil {
-		return err
-	}
-	defer cache.Close()
-	snp := snappy.NewReader(cache)
-	dec := gob.NewDecoder(snp)
-	if err := dec.Decode(fc); err != nil && err != io.EOF {
-		return err
-	}
-	return nil
-}
-
-func createCachedModel(fc *TimeZoneCollection) error {
-	cache, err := os.Create(filepath.Join(currentDirectory, "tzdata.snappy"))
-	if err != nil {
-		return err
-	}
-	defer cache.Close()
-	snp := snappy.NewBufferedWriter(cache)
-	enc := gob.NewEncoder(snp)
-	if err := enc.Encode(fc); err != nil {
-		return err
-	}
-	return nil
+	return fc, nil
 }
 
 func (g *Geometry) UnmarshalJSON(data []byte) (err error) {
@@ -230,51 +148,66 @@ func updateMaxMin(maxPoint, minPoint *Point, lat, lon float64) {
 	}
 }
 
-func (fc TimeZoneCollection) TimeZone(lat, lon float64) (tz string) {
+func (fc Collection) Location(lat, lon float64) (*time.Location, error) {
+	if tz := fc.TimeZone(lat, lon); tz != "" {
+		return time.LoadLocation(tz)
+	}
+	return nil, fmt.Errorf("failed to find time zone")
+}
+
+// TimeZone Recurse over lower find function for lat lon.
+// First shrinking the polygon for search and if we find it return it. If we didn't find it search on full polygon.
+func (fc Collection) TimeZone(lat, lon float64) string {
+	var start, end = 0.001, 0.0001
+	if result := fc.find(lat, lon, start); result != "" {
+		return result
+	}
+	return fc.find(lat, lon, end)
+}
+
+func (fc Collection) find(lat, lon, percentage float64) string {
 	for _, feat := range fc.Features {
 		f := feat
-		tzString := f.Properties.Tzid
-		if f.Geometry.MinPoint.Lat < lat &&
-			f.Geometry.MinPoint.Lon < lon &&
-			f.Geometry.MaxPoint.Lat > lat &&
-			f.Geometry.MaxPoint.Lon > lon {
+		properties := f.Properties
+		if f.Geometry.MinPoint.Lat <= lat &&
+			f.Geometry.MinPoint.Lon <= lon &&
+			f.Geometry.MaxPoint.Lat >= lat &&
+			f.Geometry.MaxPoint.Lon >= lon {
 			for _, c := range f.Geometry.Coordinates {
 				coord := c
-				if coord.MinPoint.Lat < lat &&
-					coord.MinPoint.Lon < lon &&
-					coord.MaxPoint.Lat > lat &&
-					coord.MaxPoint.Lon > lon {
-					if coord.contains(Point{lon, lat}) {
-						return tzString
+				if coord.MinPoint.Lat <= lat &&
+					coord.MinPoint.Lon <= lon &&
+					coord.MaxPoint.Lat >= lat &&
+					coord.MaxPoint.Lon >= lon {
+					if coord.contains(Point{lon, lat},
+						// get a percentage of the polygon, either shrinking it or leaving it alone.
+						int(math.Max(float64(len(coord.Polygon))*percentage, 1))) {
+						return properties["tzid"]
 					}
 				}
 			}
 		}
 	}
-	return
+	return ""
 }
 
-func (fc TimeZoneCollection) Location(lat, lon float64) (loc *time.Location, err error) {
-	return time.LoadLocation(fc.TimeZone(lat, lon))
-}
-
-func (c Coordinates) contains(point Point) bool {
+func (c Coordinates) contains(point Point, indexjump int) bool {
 	var polygon = c.Polygon
-	if windingNumber(point.Lat, point.Lon, polygon) == 0 {
+	if windingNumber(point.Lat, point.Lon, polygon, indexjump) == 0 {
 		return false
 	}
 	return true
 }
 
-func windingNumber(lat, lon float64, polygon []Point) int {
+func windingNumber(lat, lon float64, polygon []Point, indexjump int) int {
 	if len(polygon) < 3 {
 		return 0
 	}
 
 	var wn = 0
-	var edgeCount = len(polygon) - 5
+	var edgeCount = len(polygon) - indexjump
 
-	for i, j := 0, 5; i < edgeCount; i, j = i+5, j+5 {
+	for i, j := 0, indexjump; i < edgeCount; i, j = i+indexjump, j+indexjump {
 		var apLat, apLon, bLat, bLon = polygon[i].Lat, polygon[i].Lon, polygon[j].Lat, polygon[j].Lon
 		if apLat <= lat {
 			if bLat > lat {
