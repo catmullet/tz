@@ -5,7 +5,7 @@
 	finished building
 	parsing...
 	[Africa/Abidjan Africa/Blantyre Africa/Luanda America/Chicago America/Los_Angeles America/New_York America/Detroit America/Kentucky/Monticello America/Indiana/Indianapolis America/Chicago America/Chicago America/Chicago America/Denver America/Barbados Asia/Brunei America/Barbados Africa/Libreville America/Chicago America/Denver America/Denver America/Denver Africa/Ouagadougou America/Paramaribo]
-	86926 ns/parse 1 ms/23
+	43556 ns/parse 1001800 ns/23
 	finished
 */
 package main
@@ -52,7 +52,7 @@ func main() {
 	var parsedTimeZoneList = make([]string, len(timezones))
 
 	log.Println("building geojson data in memory...")
-	tzLookup, err := tz.NewGeoJsonTimeZoneLookup("timezones-with-oceans.geojson.zip")
+	tzLookup, err := tz.NewTZ()
 	if err != nil {
 		log.Fatalln("Failed to initialize tz", err)
 	}
@@ -66,7 +66,7 @@ func main() {
 	totalTime := time.Since(start)
 
 	log.Println(parsedTimeZoneList)
-	log.Println(totalTime.Nanoseconds()/int64(len(timezones)), "ns/parse", totalTime.Milliseconds(),
-		fmt.Sprintf("ms/%d", len(timezones)))
+	log.Println(totalTime.Nanoseconds()/int64(len(timezones)), "ns/parse", totalTime.Nanoseconds(),
+		fmt.Sprintf("ns/%d", len(timezones)))
 	log.Println("finished")
 }
