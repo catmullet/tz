@@ -994,7 +994,7 @@ var testdataset = []timeZoneTestData{
 	{Lat: 33.93812, Lon: -86.01397, Offset: -5},
 	{Lat: 33.44879, Lon: -86.38571, Offset: -5},
 	{Lat: 30.4724, Lon: -87.66619, Offset: -5},
-	{Lat: 32.509467, Lon: -85.130631, Offset: -4},
+	{Lat: 32.509467, Lon: -85.130631, Offset: -5},
 	{Lat: 34.70135, Lon: -86.6874, Offset: -5},
 	{Lat: 34.88397, Lon: -87.67059, Offset: -5},
 	{Lat: 32.39265, Lon: -86.27708, Offset: -5},
